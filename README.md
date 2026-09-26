@@ -20,3 +20,6 @@ Anda juga dapat menjalankan build secara manual dari **Actions → Build Launche
 - APK yang dihasilkan adalah **debug APK**, cocok untuk instalasi pribadi dan pengujian.
 - Untuk publikasi Play Store atau distribusi produksi, gunakan APK/AAB yang ditandatangani dengan release keystore.
 - Setelah terpasang, pilih LauncherOS sebagai aplikasi Home/default launcher jika Android meminta pilihan launcher.
+
+
+<!-- APK build workflow enabled -->
