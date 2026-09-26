@@ -25,19 +25,19 @@ fun GlassSurface(
 
     Box(
         modifier = modifier
-            .shadow(10.dp, shape, clip = false)
+            .shadow(5.dp, shape, clip = false)
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color.White.copy(alpha = alpha + 0.035f),
-                        Color.White.copy(alpha = alpha - 0.02f)
+                        Color.White.copy(alpha = alpha + 0.03f),
+                        Color.White.copy(alpha = alpha - 0.015f)
                     )
                 ),
                 shape
             )
             .border(
                 1.dp,
-                Color.White.copy(alpha = 0.14f),
+                Color.White.copy(alpha = 0.12f),
                 shape
             )
     ) {
