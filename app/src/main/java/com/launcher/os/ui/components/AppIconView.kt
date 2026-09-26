@@ -48,9 +48,10 @@ fun AppIconView(item: AppItem, size: Dp = 42.dp, showLabel: Boolean = true) {
 }
 
 private fun Drawable.toBitmapCompat(): ImageBitmap {
-    val bitmap = Bitmap.createBitmap(maxOf(1, intrinsicWidth), maxOf(1, intrinsicHeight), Bitmap.Config.ARGB_8888)
+    val target = 96
+    val bitmap = Bitmap.createBitmap(target, target, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    setBounds(0, 0, canvas.width, canvas.height)
+    setBounds(0, 0, target, target)
     draw(canvas)
     return bitmap.asImageBitmap()
 }
