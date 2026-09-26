@@ -20,6 +20,8 @@ POLL_SECONDS="${CODEX_POLL_SECONDS:-10}"
 SANDBOX="${CODEX_SANDBOX:-workspace-write}"
 MODEL="${CODEX_MODEL:-}"
 MAX_TASK_SECONDS="${CODEX_MAX_TASK_SECONDS:-1800}"
+MAX_RETRIES="${CODEX_MAX_RETRIES:-1}"
+BASE_BRANCH="${CODEX_BASE_BRANCH:-main}"
 TASK_LABEL="codex-task"
 RUNNING_LABEL="codex-running"
 DONE_LABEL="codex-done"
@@ -67,7 +69,9 @@ run_task() {
   trap 'rm -f "$prompt_file" "$output_file"' RETURN
 
   cat >"$prompt_file" <<EOF
-You are the implementation agent for LauncherOS.
+You are the implementation agent for LauncherOS operating under V3.1 Bounded Autonomous Execution.
+
+Before acting, read PROJECT_STATE.md, the relevant EXECUTION_MAP.md section, AI_PROTOCOL.md, and only the source files needed for the task.
 
 Repository: $REPO
 GitHub issue: #$number
@@ -85,8 +89,10 @@ AUTOMATION RULES:
 6. Do not merely describe code changes: actually implement them.
 7. Do not modify secrets, authentication files, or unrelated projects.
 8. If blocked, explain the exact blocker instead of inventing a result.
-9. Leave the working tree in a reviewable state.
-10. Your final response must contain:
+9. Do not make strategic architecture/scope changes; stop with DECISION_REQUIRED if they are necessary.
+10. Update PROJECT_STATE.md before stopping with current position, evidence, blockers, and next position.
+11. If verified, commit the changes on the task branch with a clear message. Do not push secrets.
+12. Your final response must contain:
    - STATUS: DONE or BLOCKED
    - SUMMARY: concise changes
    - VERIFICATION: commands/tests and results
@@ -94,6 +100,16 @@ AUTOMATION RULES:
 EOF
 
   gh issue edit "$number" --add-label "$RUNNING_LABEL" --remove-label "$TASK_LABEL" >/dev/null
+
+  if [[ -n "$(git status --porcelain)" ]]; then
+    gh issue comment "$number" --body "## V3.1 BLOCKED\nWorking tree is not clean before execution. Human intervention is required to protect uncommitted work." >/dev/null
+    gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
+    return 1
+  fi
+
+  git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
+  local task_branch="codex/issue-$number"
+  git switch -C "$task_branch" "origin/$BASE_BRANCH" >/dev/null 2>&1
 
   local -a codex_args
   codex_args=(exec --sandbox "$SANDBOX")
@@ -104,10 +120,22 @@ EOF
 
   echo "[$(date -Is)] Starting Codex for issue #$number"
   local exit_code=0
+  local attempt=1
   timeout --signal=TERM --kill-after=30s "$MAX_TASK_SECONDS" \
     codex "${codex_args[@]}" >"$output_file" 2>&1 || exit_code=$?
 
   if [[ "$exit_code" -eq 0 ]]; then
+    git status --short >"${output_file}.gitstatus" || true
+    if git diff --quiet && git diff --cached --quiet; then
+      echo "No repository changes produced." >>"$output_file"
+    else
+      if ! git diff --quiet; then git add -A; fi
+      if ! git diff --cached --quiet; then git commit -m "codex: complete issue #$number" >>"$output_file" 2>&1 || true; fi
+    fi
+    git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?
+    if [[ "$exit_code" -eq 0 ]]; then
+      gh pr create --base "$BASE_BRANCH" --head "$task_branch" --title "Codex: #$number $title" --body "Automated V3.1 execution for issue #$number. See issue for execution evidence." >>"$output_file" 2>&1 || true
+    fi
     local result
     result="$(tail -c 12000 "$output_file")"
     gh issue comment "$number" --body-file <(printf '%s\n\n%s' \
@@ -126,6 +154,7 @@ EOF
 
   # Return to the repository root even if Codex changed directories.
   cd "$ROOT"
+  git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
 }
 
 while true; do
