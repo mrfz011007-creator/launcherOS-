@@ -18,9 +18,10 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun WallpaperBackground() {
     val context = LocalContext.current
-    val bitmap = remember { WallpaperManager.getInstance(context).drawable.toBitmapCompat() }
+    val drawable = remember { WallpaperManager.getInstance(context).drawable }
+    val bitmap = remember(drawable) { drawable?.toBitmapCompat() }
     Image(
-        bitmap = bitmap,
+        bitmap = bitmap ?: return@Image,
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize().background(Color.Black)
