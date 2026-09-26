@@ -1,0 +1,91 @@
+name: Bootstrap LauncherOS
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Extract project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/launcher
+          mkdir -p /tmp/launcher
+          unzip -q LauncherOS-GitHub-Ready.zip -d /tmp/launcher
+          root="$(find /tmp/launcher -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          test -n "$root"
+          cp -a "$root"/. .
+          rm -rf /tmp/launcher LauncherOS-GitHub-Ready.zip
+
+      - name: Install build workflow
+        shell: bash
+        run: |
+          cat > .github/workflows/build-apk.yml <<'YAML'
+          name: Build LauncherOS APK
+
+          on:
+            push:
+              branches: [main]
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@v6
+
+                - name: Setup Java
+                  uses: actions/setup-java@v5
+                  with:
+                    distribution: temurin
+                    java-version: '17'
+
+                - name: Read Gradle version
+                  id: gradle_version
+                  shell: bash
+                  run: |
+                    url="$(grep '^distributionUrl=' gradle/wrapper/gradle-wrapper.properties | cut -d= -f2-)"
+                    version="$(printf '%s' "$url" | sed -E 's/.*gradle-([0-9.]+)-.*/\1/')"
+                    test -n "$version"
+                    echo "version=$version" >> "$GITHUB_OUTPUT"
+
+                - name: Setup Gradle
+                  uses: gradle/actions/setup-gradle@v6
+                  with:
+                    gradle-version: '${{ steps.gradle_version.outputs.version }}'
+
+                - name: Build debug APK
+                  run: gradle :app:assembleDebug --stacktrace
+
+                - name: Upload APK
+                  uses: actions/upload-artifact@v7
+                  with:
+                    name: LauncherOS-debug-apk
+                    path: app/build/outputs/apk/debug/*.apk
+                    if-no-files-found: error
+          YAML
+
+      - name: Remove bootstrap workflow
+        run: rm -f .github/workflows/bootstrap.yml
+
+      - name: Commit extracted project
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Extract LauncherOS project and add APK build workflow"
+          git push
