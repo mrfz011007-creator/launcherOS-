@@ -20,12 +20,18 @@ fun WallpaperBackground() {
     val context = LocalContext.current
     val drawable = remember { WallpaperManager.getInstance(context).drawable }
     val bitmap = remember(drawable) { drawable?.toBitmapCompat() }
-    Image(
-        bitmap = bitmap ?: return@Image,
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize().background(Color.Black)
-    )
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().background(Color.Black)
+        )
+    } else {
+        androidx.compose.foundation.layout.Box(
+            Modifier.fillMaxSize().background(Color.Black)
+        )
+    }
 }
 
 private fun Drawable.toBitmapCompat(): androidx.compose.ui.graphics.ImageBitmap {
