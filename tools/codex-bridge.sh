@@ -105,7 +105,7 @@ EOF
   echo "[$(date -Is)] Starting Codex for issue #$number"
   local exit_code=0
   timeout --signal=TERM --kill-after=30s "$MAX_TASK_SECONDS" \
-    "${codex_args[@]}" >"$output_file" 2>&1 || exit_code=$?
+    codex "${codex_args[@]}" >"$output_file" 2>&1 || exit_code=$?
 
   if [[ "$exit_code" -eq 0 ]]; then
     local result
