@@ -151,7 +151,7 @@ fun HomeScreen(
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Text(
-                        "Aplikasi",
+                        "Favorit",
                         color = Color.White.copy(alpha = 0.72f),
                         fontSize = 14.sp
                     )
