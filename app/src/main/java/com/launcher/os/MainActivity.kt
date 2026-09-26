@@ -143,7 +143,7 @@ fun AppIcon(item: AppItem) {
     }) {
         Surface(shape = RoundedCornerShape(18.dp), color = Color.White.copy(.13f), modifier = Modifier.size(58.dp)) {
             Box(contentAlignment = Alignment.Center) {
-                androidx.compose.foundation.Image(bitmap = android.graphics.drawable.Drawable.toBitmapCompat(item.info.loadIcon(context.packageManager)), contentDescription = item.label, modifier = Modifier.size(38.dp))
+                androidx.compose.foundation.Image(bitmap = item.info.loadIcon(context.packageManager).toBitmapCompat(), contentDescription = item.label, modifier = Modifier.size(38.dp))
             }
         }
         Spacer(Modifier.height(5.dp))
@@ -167,5 +167,5 @@ private fun android.graphics.drawable.Drawable.toBitmapCompat(): androidx.compos
     val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
     val c = android.graphics.Canvas(bmp)
     d.setBounds(0, 0, c.width, c.height); d.draw(c)
-    return androidx.compose.ui.graphics.asImageBitmap(bmp)
+    return bmp.asImageBitmap()
 }
