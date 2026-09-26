@@ -4,8 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-android { namespace = "com.launcher.os"; compileSdk = 35
-    defaultConfig { applicationId = "com.launcher.os"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "1.0" }
+android {
+    namespace = "com.launcher.os"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.launcher.os"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 2
+        versionName = "2.0"
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

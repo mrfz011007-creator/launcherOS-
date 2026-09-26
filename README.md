@@ -1,25 +1,89 @@
-# LauncherOS — Liquid Glass
+# LauncherOS V2 — Liquid Glass
 
-Android launcher dengan tema Liquid Glass / Glassmorphism.
+LauncherOS adalah launcher Android pribadi tanpa iklan, dengan fokus pada Liquid Glass, motion halus, dan interaksi cepat.
 
-## Build APK otomatis di GitHub
+## Target perangkat
 
-Project ini sudah dilengkapi GitHub Actions. Setelah folder project di-upload ke repository GitHub:
+- TECNO SPARK Go 2024 / BG6
+- Android 13
+- T606
+- Layar 720x1612
+- RAM fisik 4 GB + hingga 4 GB extended RAM
+- Penyimpanan 128 GB
 
-1. Pastikan branch utama bernama `main` atau `master`.
-2. Push/upload seluruh isi project ini ke repository.
-3. Buka tab **Actions** di repository.
-4. Workflow **Build LauncherOS APK** akan berjalan otomatis.
-5. Setelah selesai, buka hasil workflow dan ambil artifact **LauncherOS-debug-apk**.
-6. Di dalam artifact terdapat `app-debug.apk` yang dapat dipindahkan ke HP Android untuk instalasi.
+## Arsitektur
 
-Anda juga dapat menjalankan build secara manual dari **Actions → Build LauncherOS APK → Run workflow**.
+```
+com.launcher.os
+├── data/
+│   ├── AppItem.kt
+│   └── AppRepository.kt
+├── feature/
+│   └── home/
+│       └── HomeScreen.kt
+├── ui/
+│   ├── components/
+│   │   ├── AppIconView.kt
+│   │   ├── GlassBackground.kt
+│   │   └── GlassSurface.kt
+│   ├── motion/
+│   │   └── LauncherMotion.kt
+│   └── theme/
+│       └── LauncherTheme.kt
+└── MainActivity.kt
+```
 
-## Catatan
+## Prinsip V2
 
-- APK yang dihasilkan adalah **debug APK**, cocok untuk instalasi pribadi dan pengujian.
-- Untuk publikasi Play Store atau distribusi produksi, gunakan APK/AAB yang ditandatangani dengan release keystore.
-- Setelah terpasang, pilih LauncherOS sebagai aplikasi Home/default launcher jika Android meminta pilihan launcher.
+1. Liquid Glass menjadi bahasa visual utama.
+2. Motion dibuat sebagai sistem yang konsisten.
+3. Blur dipakai hemat karena target perangkat adalah kelas entry-level.
+4. Tidak ada iklan.
+5. Fitur harus tetap responsif pada layar 720x1612 dan RAM fisik 4 GB.
 
+Android mendukung blur melalui Compose pada Android 12+, tetapi efek blur membuat layer grafis tambahan. Karena target kita Android 13/T606, V2 menggunakan blur terutama pada elemen latar dan bukan blur berat pada setiap panel.
 
-<!-- APK build workflow enabled -->
+## Roadmap
+
+### V2.0 — Foundation
+- [x] Struktur arsitektur modular
+- [x] GlassSurface reusable
+- [x] Glass background
+- [x] Motion system
+- [x] App drawer + search
+- [x] Request default launcher role
+
+### V2.1 — Home interaction
+- [ ] Folder glass
+- [ ] Favorite/pinned apps
+- [ ] Drag & drop layout
+- [ ] Wallpaper-aware background
+
+### V2.2 — Widgets
+- [ ] AppWidgetHost
+- [ ] Widget page
+- [ ] Weather card
+- [ ] Widget placement persistence
+
+### V2.3 — Intelligence & navigation
+- [ ] Gesture navigation
+- [ ] App library categories
+- [ ] Search contacts/settings
+- [ ] Recent apps integration
+- [ ] Performance tuning
+
+### V2.4 — Personalization & security
+- [ ] Customization panel
+- [ ] App lock
+- [ ] Hidden apps
+- [ ] Backup/import layout
+
+### V2.5 — Stable personal build
+- [ ] Persistent signing key
+- [ ] Release APK
+- [ ] Final performance pass on BG6
+- [ ] Install/update workflow
+
+## Build
+
+GitHub Actions menghasilkan debug APK untuk pengujian pribadi.
