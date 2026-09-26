@@ -1,11 +1,5 @@
 package com.launcher.os.feature.home
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -42,59 +36,71 @@ fun HomeScreen(repository: AppRepository, onRequestDefaultLauncher: () -> Unit) 
     var query by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        apps = withContext(Dispatchers.Default) { repository.loadApps() }
+        apps = withContext(Dispatchers.IO) {
+            runCatching { repository.loadApps() }.getOrDefault(emptyList())
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
         WallpaperBackground()
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.34f)))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
 
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Spacer(Modifier.height(74.dp))
-
-            GlassSurface(
-                Modifier.width(300.dp).height(126.dp),
-                radius = 24.dp, alpha = 0.08f, shadow = false
-            ) {
-                Column(
-                    Modifier.fillMaxSize().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text("Foto", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-
-            Spacer(Modifier.weight(1f))
-
-            GlassSurface(
-                Modifier.fillMaxWidth().height(92.dp),
-                radius = 28.dp, alpha = 0.12f, shadow = false
-            ) {
-                Row(
-                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val groups = apps.take(16).chunked(4)
-                    repeat(4) { index ->
-                        FolderPreview(groups.getOrNull(index).orEmpty()) { showLibrary = true }
-                    }
-                }
-            }
-            Spacer(Modifier.height(22.dp))
-        }
-
-        if (showLibrary) {
+        if (!showLibrary) {
+            HomeContent(
+                apps = apps,
+                onOpenLibrary = { showLibrary = true }
+            )
+        } else {
             AppLibrary(
-                apps = apps, query = query,
+                apps = apps,
+                query = query,
                 onQueryChange = { query = it },
                 onClose = { query = ""; showLibrary = false }
             )
         }
+    }
+}
+
+@Composable
+private fun HomeContent(apps: List<AppItem>, onOpenLibrary: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(74.dp))
+
+        GlassSurface(
+            Modifier.width(300.dp).height(126.dp),
+            radius = 24.dp, alpha = 0.08f, shadow = false
+        ) {
+            Column(
+                Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text("Foto", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        GlassSurface(
+            Modifier.fillMaxWidth().height(92.dp),
+            radius = 28.dp, alpha = 0.12f, shadow = false
+        ) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val groups = apps.take(16).chunked(4)
+                repeat(4) { index ->
+                    FolderPreview(groups.getOrNull(index).orEmpty(), onOpenLibrary)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
     }
 }
 
@@ -107,7 +113,11 @@ private fun FolderPreview(apps: List<AppItem>, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (apps.isEmpty()) return@Box
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
             Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 apps.take(2).forEach { AppIconView(it, 22.dp, false) }
             }
@@ -120,8 +130,10 @@ private fun FolderPreview(apps: List<AppItem>, onClick: () -> Unit) {
 
 @Composable
 private fun AppLibrary(
-    apps: List<AppItem>, query: String,
-    onQueryChange: (String) -> Unit, onClose: () -> Unit
+    apps: List<AppItem>,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClose: () -> Unit
 ) {
     val filtered = remember(apps, query) {
         if (query.isBlank()) apps else apps.filter { it.label.contains(query, ignoreCase = true) }
@@ -132,6 +144,7 @@ private fun AppLibrary(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
         Spacer(Modifier.height(10.dp))
+
         GlassSurface(
             Modifier.fillMaxWidth().height(54.dp),
             radius = 27.dp, alpha = 0.11f, shadow = false
@@ -143,18 +156,26 @@ private fun AppLibrary(
                 Icon(Icons.Default.Search, "Cari", tint = Color.White.copy(alpha = 0.78f))
                 Spacer(Modifier.width(10.dp))
                 BasicTextField(
-                    value = query, onValueChange = onQueryChange, singleLine = true,
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
                     textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
                     modifier = Modifier.weight(1f),
                     decorationBox = { inner ->
                         Box {
-                            if (query.isEmpty()) Text("Perpustakaan Aplikasi", color = Color.White.copy(alpha = 0.55f))
+                            if (query.isEmpty()) {
+                                Text("Perpustakaan Aplikasi", color = Color.White.copy(alpha = 0.55f))
+                            }
                             inner()
                         }
                     }
                 )
-                Text("Batal", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp,
-                    modifier = Modifier.clickable(onClick = onClose))
+                Text(
+                    "Batal",
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.clickable(onClick = onClose)
+                )
             }
         }
 
@@ -167,11 +188,18 @@ private fun AppLibrary(
         ) {
             grouped.forEach { (letter, items) ->
                 item {
-                    Text(letter, color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        letter,
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
                 }
                 items(items, key = { it.info.activityInfo.packageName }) { app ->
-                    Box(Modifier.fillMaxWidth().height(54.dp), contentAlignment = Alignment.CenterStart) {
+                    Box(
+                        Modifier.fillMaxWidth().height(54.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
                         AppIconView(app, 34.dp, true)
                     }
                 }
