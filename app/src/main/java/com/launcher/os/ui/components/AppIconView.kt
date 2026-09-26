@@ -41,7 +41,7 @@ fun AppIconView(item: AppItem, size: Dp = 42.dp, showLabel: Boolean = true) {
         Image(bitmap, item.label, Modifier.size(size))
         if (showLabel) {
             Spacer(Modifier.height(4.dp))
-            Text(item.label, Color.White.copy(alpha = 0.9f), fontSize = 10.sp,
+            Text(text = item.label, color = Color.White.copy(alpha = 0.9f), fontSize = 10.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
