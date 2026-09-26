@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -39,22 +38,11 @@ fun AppIconView(item: AppItem) {
                 ?.let(context::startActivity)
         }
     ) {
-        GlassSurface(
-            modifier = Modifier.size(58.dp),
-            radius = 18.dp,
-            alpha = 0.115f
-        ) {
-            Box(
-                modifier = Modifier.size(58.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    bitmap = bitmap,
-                    contentDescription = item.label,
-                    modifier = Modifier.size(38.dp)
-                )
-            }
-        }
+        Image(
+            bitmap = bitmap,
+            contentDescription = item.label,
+            modifier = Modifier.size(44.dp)
+        )
 
         Spacer(Modifier.height(5.dp))
 
