@@ -18,31 +18,21 @@ import androidx.compose.ui.unit.dp
 fun GlassSurface(
     modifier: Modifier = Modifier,
     radius: Dp = 24.dp,
-    alpha: Float = 0.14f,
+    alpha: Float = 0.12f,
+    shadow: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(radius)
-
     Box(
         modifier = modifier
-            .shadow(5.dp, shape, clip = false)
+            .then(if (shadow) Modifier.shadow(3.dp, shape, clip = false) else Modifier)
             .background(
                 Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = alpha + 0.03f),
-                        Color.White.copy(alpha = alpha - 0.015f)
-                    )
-                ),
-                shape
+                    listOf(Color.White.copy(alpha = alpha + 0.025f), Color.White.copy(alpha = alpha - 0.015f))
+                ), shape
             )
-            .border(
-                1.dp,
-                Color.White.copy(alpha = 0.12f),
-                shape
-            )
+            .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
     ) {
-        CompositionLocalProvider(LocalContentColor provides Color.White) {
-            content()
-        }
+        CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
     }
 }
