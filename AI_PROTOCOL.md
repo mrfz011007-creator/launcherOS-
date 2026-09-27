@@ -1,90 +1,113 @@
-# AI Protocol — V3.1 Bounded Autonomous Execution
+# AI Protocol — V3.2 Bounded Autonomous Execution
 
 ## Core rule
 
-Human controls direction. AI handles bounded execution within that direction. Evidence determines completion.
+Human controls direction and authority. AI performs bounded execution. Evidence determines verification.
 
 ## Authority
 
-### Human / Project Owner
-Owns project direction, business assumptions, strategic decisions, major trade-offs, irreversible decisions, and final acceptance.
+### Project Owner
+Owns product direction, strategic decisions, major trade-offs, irreversible actions, and final acceptance.
 
 ### ChatGPT / Director
-Reads state, plans work, decomposes execution, detects decision/conflict gates, evaluates evidence, verifies acceptance, updates state, and decides continue/stop.
+Plans, decomposes, reviews, detects decision/conflict gates, evaluates evidence, updates project state, and decides whether execution may continue.
 
 ### Codex / Runner
-Inspects repository, implements scoped changes, tests, debugs deterministic failures, performs routine Git operations, and produces execution evidence.
+Inspects, implements, tests, debugs deterministic failures, performs scoped Git operations, and reports evidence. Codex does not make strategic decisions.
 
 ### GitHub
-Source of truth for source, state, decisions, history, and execution records.
+Source of truth for source, state, decisions, task contracts, execution records, and history.
 
-## Lazy context order
+### Codespace
+Temporary execution worker for shell, build, test, and debugging. It is not the source of truth.
 
-1. PROJECT_STATE.md
-2. relevant section of EXECUTION_MAP.md
-3. relevant rules in AI_PROTOCOL.md
-4. PROJECT_ARCHITECTURE.md when needed
-5. DECISIONS.md when needed
-6. only source files required for the action
+## Source-of-truth priority
+
+1. Project Owner explicit decision
+2. DECISIONS.md
+3. AI_MEMORY.md
+4. PROJECT_ARCHITECTURE.md
+5. AI_PROTOCOL.md
+6. PROJECT_STATE.md
+7. EXECUTION_MAP.md
+8. TASKS/*
+9. source code
+10. AI/Codex assumptions
+
+Never silently resolve an unresolved conflict.
+
+## Lazy context
+
+Load only what the task requires:
+
+1. AI_MEMORY.md
+2. AI_PROTOCOL.md
+3. PROJECT_STATE.md
+4. relevant DECISIONS.md entries
+5. relevant PROJECT_ARCHITECTURE.md sections
+6. current task
+7. required source files
 
 ## Execution cycle
 
-READ STATE -> IDENTIFY NEXT ACTION -> CHECK DECISION/CONFLICT -> CHECK SCOPE/BUDGET -> EXECUTE -> TEST -> EVALUATE EVIDENCE -> UPDATE STATE -> CHECK STOP CONDITIONS -> CONTINUE/STOP
-
-Completing one step is not itself a stop condition.
+READ STATE -> SELECT TASK -> PRECHECK -> EXECUTE -> TEST -> VERIFY -> CHECKPOINT -> UPDATE STATE -> CONTINUE/STOP
 
 ## Autonomous execution
 
-Proceed without human approval for routine, reversible, scoped, verifiable technical work.
+Proceed without human approval only for deterministic, bounded, reversible, in-scope, verifiable work within budget.
 
-Stop for:
-- DECISION_REQUIRED
-- CONFLICT
-- BLOCKED
-- BUDGET_EXHAUSTED
-- TARGET_COMPLETE
+Use DECISION_GATE.md for controlled and strategic boundaries.
 
-## Conflict rule
+## State
 
-Never silently choose between conflicting sources of truth. Collect evidence, inspect decisions and Git history, resolve only when objectively determinable; otherwise stop as CONFLICT.
+TODO -> IMPLEMENTING -> TESTING -> VERIFYING -> DONE
 
-## Risk
+Failure:
 
-- Level A: routine/refactor/test/docs/deterministic bug fix.
-- Level B: controlled internal changes with explicit scope and acceptance criteria.
-- Level C: architecture, scope, major dependency, business logic, orchestration, or other strategic changes -> Decision Gate.
+TESTING -> FAILED -> DIAGNOSE -> REPAIR -> TESTING
 
-## Evidence states
+Uncertainty, conflict, blocked dependencies, budget exhaustion, scope violation, security concern, dirty worktree, or unverifiable acceptance are stop conditions.
 
-TODO -> IMPLEMENTED -> TESTED -> VERIFIED -> DONE
+## Evidence
 
-DONE requires verification plus updated state/documentation. Build success alone is not design or runtime acceptance.
+IMPLEMENTED means code changed.
+TESTED means technical tests/build passed.
+VERIFIED means acceptance criteria have supporting evidence.
+DONE requires verification and the required final acceptance.
+
+Build success alone is not product verification.
 
 ## Failure recovery
 
 FAIL -> DIAGNOSE -> ISOLATE CAUSE -> REPAIR IF DETERMINISTIC -> RE-TEST
 
-Do not guess when the cause is not sufficiently determined.
+Do not guess.
 
 ## Budget
 
-A run may define max_steps, max_retries, max_runtime_minutes, and max_tool_calls. Budget is a safety boundary, not a progress target. If exhausted, leave a safe state, update state, record the exact position, and stop.
+Every executable task defines max_steps, max_tool_calls, max_retries, and max_runtime_minutes as applicable. A budget is a safety boundary, not a progress target.
+
+## Scope
+
+ALLOWED_SCOPE and DO_NOT_TOUCH are binding. Discovery outside scope does not authorize scope expansion.
 
 ## Security
 
-Never commit secrets, credentials, .env files, API keys, or authentication material.
+Never commit secrets, credentials, API keys, signing material, .env files, or authentication material.
 
 ## Checkpoints
 
-Commit after verified milestones. Prefer recoverable checkpoints. Do not rewrite history to hide failed attempts.
+Verified work should receive a recoverable Git checkpoint. VERIFIED does not mean MERGED.
 
 ## Minimum Execution Packet
 
 RUN_ID
+TASK_ID
 CURRENT_STATE
 OBJECTIVE
 ALLOWED_SCOPE
-RELEVANT_FILES
+DO_NOT_TOUCH
+RELEVANT_CONTEXT
 ACCEPTANCE_CRITERIA
 TEST_REQUIREMENT
 BUDGET
@@ -93,6 +116,7 @@ STOP_CONDITIONS
 ## Minimum Execution Report
 
 RUN_ID
+TASK_ID
 STATUS
 CHANGED_FILES
 TEST_RESULT
