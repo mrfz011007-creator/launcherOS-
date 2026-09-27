@@ -103,7 +103,7 @@ Avoid:
 
 TODO -> IMPLEMENTED -> TESTED -> VERIFIED -> DONE
 
-DONE means the applicable acceptance evidence exists and the Project Owner has accepted the result where human acceptance is required.
+`VERIFIED` means acceptance criteria have supporting evidence. `DONE` means the required final acceptance has also occurred where human acceptance is required.
 
 ## Stop conditions
 
