@@ -21,7 +21,7 @@ LauncherOS is in reference-fidelity stabilization. V3.2 control-plane foundation
 - V3.2 control-plane foundation: IMPLEMENTED
 - Bridge integration: TODO
 - First bounded execution task: TODO
-- Live Codespace smoke test: TODO
+- Live Codespace smoke test: BLOCKED — GitHub CLI authentication is invalid and GitHub API access failed before Codex invocation.
 
 ## Product milestone map
 
@@ -41,15 +41,16 @@ LauncherOS is in reference-fidelity stabilization. V3.2 control-plane foundation
 ## Active gates
 
 - V3.2 bridge integration has not yet been verified in a live Codespace.
+- M01-001 run-20260927T062440Z-ehuB21716 stopped before task precheck/claim because `gh repo view` could not connect to api.github.com; `gh auth status` reports the active token as invalid.
 - Runtime/device verification remains required for launcher acceptance.
 
 ## Blockers
 
-None known from repository state.
+- M01-001 cannot proceed until GitHub CLI authentication and API connectivity are restored in the Codespace.
 
 ## Next action
 
-Complete V3.2 bridge integration and create the first executable M01 task contract.
+Restore valid GitHub CLI authentication and API access in the Codespace, then rerun M01-001. Do not start M01-002 until a successful bounded run and its evidence are verified.
 
 ## Stop conditions
 
