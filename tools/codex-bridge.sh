@@ -374,7 +374,7 @@ transition_state() {
   local current="$1"
   local next="$2"
   case "$current:$next" in
-    TODO:IMPLEMENTING|IMPLEMENTING:TESTING|TESTING:VERIFYING|VERIFYING:VERIFIED|IMPLEMENTING:FAILED|TESTING:FAILED|VERIFYING:FAILED|TESTING:BUDGET_EXHAUSTED|IMPLEMENTING:BLOCKED|TESTING:BLOCKED|VERIFYING:DECISION_REQUIRED)
+    TODO:IMPLEMENTING|IMPLEMENTING:TESTING|TESTING:VERIFYING|VERIFYING:VERIFIED|IMPLEMENTING:FAILED|TESTING:FAILED|VERIFYING:FAILED|TESTING:BUDGET_EXHAUSTED|IMPLEMENTING:BLOCKED|TESTING:BLOCKED|VERIFYING:DECISION_REQUIRED|VERIFIED:DONE)
       echo "STATE_TRANSITION: $current -> $next"
       return 0
       ;;
@@ -832,8 +832,15 @@ while true; do
       number="$(jq -r '.number' <<<"$issue_json")"
       body="$(jq -r '.body // ""' <<<"$issue_json")"
       task_id="$(printf '%s\n' "$body" | sed -n 's/^TASK_ID:[[:space:]]*//p' | head -n1)"
-      run_id="$(printf '%s\n' "$body" | sed -n 's/^RUN_ID:[[:space:]]*//p' | head -n1)"
-      [[ -n "$task_id" && -n "$run_id" ]] || continue
+      [[ -n "$task_id" ]] || continue
+      run_id="$(for dir in EXECUTIONS/"$task_id"/*; do
+        [[ -f "$dir/"*.md ]] || continue
+        report="$dir/$(basename "$dir").md"
+        [[ -f "$report" ]] || continue
+        grep -q '^FINAL_STATE: VERIFIED' "$report" 2>/dev/null || continue
+        basename "$dir"
+      done | sort | tail -n1)"
+      [[ -n "$run_id" ]] || continue
       if human_acceptance "$number" "$task_id" "$run_id"; then
         gh issue comment "$number" --body "## Human Acceptance — DONE
 
