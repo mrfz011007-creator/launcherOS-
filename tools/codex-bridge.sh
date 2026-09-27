@@ -27,6 +27,7 @@ TASK_LABEL="codex-task"
 RUNNING_LABEL="codex-running"
 DONE_LABEL="codex-done"
 VERIFIED_LABEL="codex-verified"
+ACCEPTED_LABEL="codex-accepted"
 FAILED_LABEL="codex-failed"
 
 require_cmd() {
@@ -281,6 +282,57 @@ release_task_claim() {
 }
 
 ensure_label "$VERIFIED_LABEL" "Execution verified; awaiting product acceptance"
+ensure_label "$ACCEPTED_LABEL" "Explicit Project Owner product acceptance"
+
+human_acceptance() {
+  local number="$1"
+  local task_id="$2"
+  local run_id="$3"
+  local report_file="EXECUTIONS/$task_id/$run_id.md"
+  local acceptance_file="EVIDENCE/$task_id/$run_id/product-acceptance.md"
+
+  [[ -f "$report_file" && -f "$acceptance_file" ]] || {
+    echo "HUMAN_ACCEPTANCE: BLOCKED_MISSING_RECORD"
+    return 1
+  }
+
+  if ! grep -q '^STATUS: PENDING' "$acceptance_file"; then
+    echo "HUMAN_ACCEPTANCE: NOT_PENDING"
+    return 1
+  fi
+
+  cat >>"$acceptance_file" <<EOF
+
+## Project Owner Acceptance
+
+STATUS: PASS
+ACCEPTED_AT: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+AUTHORITY: Project Owner
+TRIGGER: explicit codex-accepted label
+EOF
+
+  cat >>"$report_file" <<EOF
+
+## Human Acceptance
+
+STATUS: PASS
+ACCEPTED_AT: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+AUTHORITY: Project Owner
+TRIGGER: explicit codex-accepted label
+EOF
+
+  if ! transition_state "VERIFIED" "DONE" >>"$acceptance_file" 2>&1; then
+    echo "HUMAN_ACCEPTANCE: INVALID_STATE_TRANSITION"
+    return 1
+  fi
+
+  git add "$acceptance_file" "$report_file"
+  git commit -m "chore: record human acceptance $run_id" >/dev/null
+  git push >/dev/null
+
+  echo "HUMAN_ACCEPTANCE: PASS task=$task_id run=$run_id"
+  return 0
+}
 
 director_review() {
   local task_id="$1"
@@ -772,6 +824,26 @@ EOF
 }
 
 while true; do
+  accepted_tasks="$(gh issue list --repo "$REPO" --state open --label "$VERIFIED_LABEL" --label "$ACCEPTED_LABEL" --limit 10 --json number,title,body --jq '.[] | @base64')"
+  if [[ -n "$accepted_tasks" ]]; then
+    while IFS= read -r encoded; do
+      [[ -z "$encoded" ]] && continue
+      issue_json="$(printf '%s' "$encoded" | base64 --decode)"
+      number="$(jq -r '.number' <<<"$issue_json")"
+      body="$(jq -r '.body // ""' <<<"$issue_json")"
+      task_id="$(printf '%s\n' "$body" | sed -n 's/^TASK_ID:[[:space:]]*//p' | head -n1)"
+      run_id="$(printf '%s\n' "$body" | sed -n 's/^RUN_ID:[[:space:]]*//p' | head -n1)"
+      [[ -n "$task_id" && -n "$run_id" ]] || continue
+      if human_acceptance "$number" "$task_id" "$run_id"; then
+        gh issue comment "$number" --body "## Human Acceptance — DONE
+
+Project Owner acceptance was explicitly recorded through the `codex-accepted` gate. Product acceptance evidence is now PASS." >/dev/null
+        gh issue edit "$number" --add-label "$DONE_LABEL" --remove-label "$VERIFIED_LABEL" --remove-label "$ACCEPTED_LABEL" >/dev/null
+        gh issue close "$number" >/dev/null
+      fi
+    done <<<"$accepted_tasks"
+  fi
+
   tasks="$(gh issue list --repo "$REPO" --state open --label "$TASK_LABEL" \
     --limit 10 --json number,title,body --jq '.[] | @base64')"
 
