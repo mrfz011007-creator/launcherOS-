@@ -256,7 +256,7 @@ stop_issue() {
 claim_task() {
   local task_id="$1"
   local run_id="$2"
-  local claim_dir="$ROOT/.launcheros-claims"
+  local claim_dir="${CODEX_CLAIM_ROOT:-${TMPDIR:-/tmp}/launcheros-claims}"
   local claim_file="$claim_dir/$task_id.claim"
   mkdir -p "$claim_dir"
   if [[ -e "$claim_file" ]]; then
