@@ -1,21 +1,21 @@
-# LauncherOS Decisions
+[object Object]
 
-## D-001 — GitHub is source of truth
+## D-006 — Decision hierarchy
 
-Decision: Repository state, persistent execution documents, Git history, tests, and runtime evidence outrank chat history for project state.
+Decision: Explicit Project Owner decisions and DECISIONS.md outrank operational memory, architecture, protocol, state, task files, source code, and AI assumptions.
 
-## D-002 — Bounded autonomy
+## D-007 — Bounded task execution
 
-Decision: Codex may execute routine, scoped, reversible, verifiable technical work without micro-approval. Strategic or irreversible decisions require a human decision gate.
+Decision: V3.2 uses explicit task contracts, budgets, stop conditions, execution reports, and evidence before considering a task verified.
 
-## D-003 — Evidence gate
+## D-008 — Codespace as temporary worker
 
-Decision: A successful compilation is not sufficient to declare LauncherOS complete. Acceptance requires the applicable tests/evidence and, for the installable milestone, a produced APK plus human device acceptance.
+Decision: Codespace is not the project source of truth and should be used only for bounded shell/build/test/debug execution.
 
-## D-004 — Simple orchestration
+## D-009 — Build is not product acceptance
 
-Decision: Use the existing GitHub Issue -> Codespace bridge as the initial transport. Do not add additional agents or infrastructure until a measurable bottleneck requires it.
+Decision: Technical build/test success and product verification are separate evidence states.
 
-## D-005 — Reference fidelity
+## D-010 — No premature orchestration
 
-Decision: Wallpaper-dominant visual hierarchy and shared glass surfaces are the design source of truth; individual icon glass cards are prohibited.
+Decision: Do not add persistent schedulers, databases, webhooks, additional agents, or dashboards until a measurable bottleneck requires them and the Project Owner approves the scope.

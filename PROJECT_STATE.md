@@ -1,44 +1,66 @@
-# LauncherOS Project State
+# LauncherOS Project State — V3.2
 
-Status: ACTIVE
+## Project status
 
-## Where am I?
+IN_PROGRESS
 
-LauncherOS is in reference-fidelity stabilization. The execution system is being upgraded to V3.1 Bounded Autonomous Execution.
+## Current position
 
-## What is done?
+LauncherOS is in reference-fidelity stabilization. V3.2 control-plane foundations are now present in the repository.
+
+## Completed
 
 - Android launcher project builds in GitHub Actions.
 - Codex CLI is configured in Codespaces.
-- Jalur B GitHub Issue -> Codespace bridge -> Codex exists.
-- Reference-fidelity rules are documented in AGENTS.md.
-- The bridge invocation bug was corrected on main.
+- GitHub Issue -> Codespace bridge exists.
+- V3.1 bounded execution documents exist.
+- V3.2 persistent memory, task schema, execution schema, decision gate, execution engine specification, and evidence/execution directories are present.
 
-## Current
+## Current milestone
 
-V3.1 execution contract is being introduced.
+M1 — Execution infrastructure
 
-Current operational target:
-1. Stable launcher startup.
+Status: IN_PROGRESS
+
+## Product execution targets
+
+1. Launcher startup stability.
 2. Reference-accurate Phase 1 home experience.
 3. Verified debug APK artifact.
 4. Reproducible execution state and evidence.
 
-## Blocked
+## Milestone map
 
-None known from repository state. Runtime/device behavior must still be verified when an APK is produced.
+| Milestone | Status |
+|---|---|
+| M01 HOME | TODO |
+| M02 DOCK | LOCKED |
+| M03 FOLDER | LOCKED |
+| M04 APP_LIBRARY | LOCKED |
+| M05 SEARCH | LOCKED |
+| M06 MOTION | LOCKED |
+| M07 WIDGET | LOCKED |
+| M08 EDIT_MODE | LOCKED |
+| M09 PERFORMANCE | LOCKED |
+| M10 RELEASE | LOCKED |
 
-## Next
+## Active gates
 
-- Run V3.1 smoke test through the bridge.
-- Execute LauncherOS stabilization task.
-- Verify Actions artifact.
-- Perform human installation/final acceptance.
+- V3.2 bridge integration has not yet been verified in a live Codespace.
+- Runtime/device verification remains required for launcher acceptance.
 
-## Stop reason
+## Blockers
 
-This file is the persistent project state. Do not infer completion from chat history alone.
+None known from repository state.
 
-## Evidence
+## Next action
 
-Record verified build/test evidence in execution reports and GitHub history.
+Complete V3.2 bridge integration and create the first executable M01 task contract.
+
+## Stop conditions
+
+Do not infer completion from chat history. Use GitHub state, execution records, tests, and runtime evidence.
+
+## State update rule
+
+Every bounded execution must leave the project in a known state and record the exact next position.
