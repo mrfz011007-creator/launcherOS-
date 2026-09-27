@@ -282,6 +282,42 @@ release_task_claim() {
 
 ensure_label "$VERIFIED_LABEL" "Execution verified; awaiting product acceptance"
 
+director_review() {
+  local task_id="$1"
+  local run_id="$2"
+  local report_file="EXECUTIONS/$task_id/$run_id.md"
+  local evidence_dir="EVIDENCE/$task_id/$run_id"
+  local required=(
+    "$report_file"
+    "$evidence_dir/implementation.md"
+    "$evidence_dir/technical-test.md"
+    "$evidence_dir/product-acceptance.md"
+    "$evidence_dir/git-checkpoint.md"
+    "$evidence_dir/state-transition.md"
+  )
+  local missing=()
+  local item
+  for item in "${required[@]}"; do
+    [[ -f "$item" ]] || missing+=("$item")
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    echo "DIRECTOR_REVIEW: BLOCKED_MISSING_EVIDENCE"
+    printf 'DIRECTOR_REVIEW_MISSING: %s\n' "${missing[@]}"
+    return 1
+  fi
+
+  local acceptance_status
+  acceptance_status="$(awk -F': ' '/^ACCEPTANCE:/ {print $2; exit}' "$report_file" || true)"
+  if [[ "$acceptance_status" == *"PENDING"* ]] || grep -q '^STATUS: PENDING' "$evidence_dir/product-acceptance.md" 2>/dev/null; then
+    echo "DIRECTOR_REVIEW: READY_FOR_HUMAN_ACCEPTANCE"
+    return 0
+  fi
+
+  echo "DIRECTOR_REVIEW: READY"
+  return 0
+}
+
 transition_state() {
   local current="$1"
   local next="$2"
@@ -705,12 +741,19 @@ EOF
       git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
       return 0
     fi
+    if ! director_review "$task_id" "$run_id" >>"$output_file" 2>&1; then
+      gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Director review blocked" "$(tail -c 8000 "$output_file")") >/dev/null || true
+      gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null || true
+      cd "$ROOT"
+      git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
+      return 0
+    fi
     local result
     result="$(tail -c 12000 "$output_file")"
-    gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result — VERIFIED" "$result") >/dev/null
+    gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result — VERIFIED / DIRECTOR REVIEW" "$result") >/dev/null
     gh issue edit "$number" --add-label "$VERIFIED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
-    # VERIFIED is not DONE: product acceptance remains a separate human gate.
-    echo "[$(date -Is)] Issue #$number reached VERIFIED; awaiting product acceptance."
+    # Director review is an evidence gate; it does not grant product acceptance.
+    echo "[$(date -Is)] Issue #$number passed Director Review and is ready for human/product acceptance."
   else
     if [[ "$exit_code" -eq 0 && "$budget_status" == "BUDGET_EXHAUSTED" ]]; then
       exit_code=125
