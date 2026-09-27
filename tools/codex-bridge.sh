@@ -253,6 +253,32 @@ stop_issue() {
   gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$TASK_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null || true
 }
 
+claim_task() {
+  local task_id="$1"
+  local run_id="$2"
+  local claim_dir="$ROOT/.launcheros-claims"
+  local claim_file="$claim_dir/$task_id.claim"
+  mkdir -p "$claim_dir"
+  if [[ -e "$claim_file" ]]; then
+    local existing_pid existing_run
+    existing_pid="$(sed -n 's/^PID=//p' "$claim_file" | head -n 1)"
+    existing_run="$(sed -n 's/^RUN_ID=//p' "$claim_file" | head -n 1)"
+    if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+      echo "Task $task_id is already claimed by PID=$existing_pid RUN_ID=$existing_run" >&2
+      return 1
+    fi
+    rm -f "$claim_file"
+  fi
+  ( set -o noclobber; printf 'RUN_ID=%s\nTASK_ID=%s\nPID=%s\nCLAIMED_AT=%s\n' "$run_id" "$task_id" "$BASHPID" "$(date -Is)" > "$claim_file" ) 2>/dev/null || { echo "Could not acquire task claim: $task_id" >&2; return 1; }
+  printf '%s\n' "$claim_file"
+}
+
+release_task_claim() {
+  local claim_file="$1"
+  [[ -f "$claim_file" ]] || return 0
+  rm -f "$claim_file"
+}
+
 run_task() {
   local number="$1"
   local title="$2"
@@ -283,6 +309,19 @@ run_task() {
   esac
 
   task_contract="$(cat "$task_file")"
+
+  local run_id
+  run_id="run-$(date -u +%Y%m%dT%H%M%SZ)-$-$RANDOM"
+  local claim_file
+  if ! claim_file="$(claim_task "$task_id" "$run_id")"; then
+    stop_issue "$number" "CONFLICT" "Task $task_id is already claimed by another active bridge worker."
+    return 0
+  fi
+  trap "release_task_claim \"$claim_file\"" RETURN
+  echo "RUN_ID: $run_id"
+  echo "TASK_ID: $task_id"
+  echo "CLAIM: $claim_file"
+
   prompt_file="$(mktemp)"
   output_file="$(mktemp)"
   trap 'rm -f "$prompt_file" "$output_file"' RETURN
@@ -298,6 +337,7 @@ Before acting, read PROJECT_STATE.md, the relevant EXECUTION_MAP.md section, AI_
 Repository: $REPO
 GitHub issue: #$number
 Issue title: $title
+RUN_ID: $run_id
 TASK_ID: $task_id
 
 TASK CONTRACT:
