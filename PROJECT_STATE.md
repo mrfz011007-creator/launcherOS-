@@ -16,20 +16,14 @@ LauncherOS is in reference-fidelity stabilization. V3.2 control-plane foundation
 - V3.1 bounded execution documents exist.
 - V3.2 persistent memory, task schema, execution schema, decision gate, execution engine specification, and evidence/execution directories are present.
 
-## Current milestone
+## Control-plane status
 
-M1 — Execution infrastructure
+- V3.2 control-plane foundation: IMPLEMENTED
+- Bridge integration: TODO
+- First bounded execution task: TODO
+- Live Codespace smoke test: TODO
 
-Status: IN_PROGRESS
-
-## Product execution targets
-
-1. Launcher startup stability.
-2. Reference-accurate Phase 1 home experience.
-3. Verified debug APK artifact.
-4. Reproducible execution state and evidence.
-
-## Milestone map
+## Product milestone map
 
 | Milestone | Status |
 |---|---|
