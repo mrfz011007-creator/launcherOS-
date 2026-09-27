@@ -5,7 +5,6 @@ Every executable task must follow this contract.
 ## Required fields
 
 - TASK_ID
-- RUN_ID
 - TITLE
 - OBJECTIVE
 - RISK
