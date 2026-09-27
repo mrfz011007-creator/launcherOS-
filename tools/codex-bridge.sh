@@ -279,6 +279,25 @@ release_task_claim() {
   rm -f "$claim_file"
 }
 
+verify_git_checkpoint() {
+  local expected_branch="$1"
+  local expected_remote="$2"
+  local status
+  status="$(git status --porcelain)"
+  [[ -z "$status" ]] || { echo "GIT_VERIFICATION: DIRTY_WORKTREE"; return 1; }
+  [[ "$(git branch --show-current)" == "$expected_branch" ]] || { echo "GIT_VERIFICATION: WRONG_BRANCH"; return 1; }
+  git fetch origin "$expected_branch" >/dev/null 2>&1 || { echo "GIT_VERIFICATION: FETCH_FAILED"; return 1; }
+  local local_sha remote_sha
+  local_sha="$(git rev-parse HEAD)"
+  remote_sha="$(git rev-parse "origin/$expected_branch")"
+  [[ "$local_sha" == "$remote_sha" ]] || { echo "GIT_VERIFICATION: REMOTE_MISMATCH local=$local_sha remote=$remote_sha"; return 1; }
+  if [[ -n "$expected_remote" && "$local_sha" != "$expected_remote" ]]; then
+    echo "GIT_VERIFICATION: EXPECTED_SHA_MISMATCH expected=$expected_remote actual=$local_sha"
+    return 1
+  fi
+  echo "GIT_VERIFICATION: PASS branch=$expected_branch sha=$local_sha worktree=clean remote=matches"
+}
+
 write_evidence_record() {
   local task_id="$1"
   local run_id="$2"
@@ -620,8 +639,31 @@ EOF
     report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Implementation evidence and technical-test evidence recorded. Product acceptance evidence is PENDING." "None" "None" "None" "TARGET_COMPLETE" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
     git add "$report_file"
     git commit -m "chore: record execution $run_id" >>"$output_file" 2>&1 || exit_code=$?
-    if [[ "$exit_code" -eq 0 ]]; then git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?; fi
+    local checkpoint_sha=""
+    if [[ "$exit_code" -eq 0 ]]; then
+      git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?
+      if [[ "$exit_code" -eq 0 ]]; then checkpoint_sha="$(git rev-parse HEAD)"; fi
+    fi
+    if [[ "$exit_code" -eq 0 ]]; then
+      if ! verify_git_checkpoint "$task_branch" "$checkpoint_sha" >>"$output_file" 2>&1; then
+        exit_code=126
+      else
+        local git_evidence
+        git_evidence="$(write_evidence_record "$task_id" "$run_id" "git-checkpoint" "PASS" "git verification" "Branch=$task_branch; remote HEAD matches local HEAD=$checkpoint_sha; working tree clean.")"
+        git add "$git_evidence"
+        git commit -m "chore: record git checkpoint evidence $run_id" >>"$output_file" 2>&1 || exit_code=$?
+        if [[ "$exit_code" -eq 0 ]]; then git push >>"$output_file" 2>&1 || exit_code=$?; fi
+        if [[ "$exit_code" -eq 0 ]]; then verify_git_checkpoint "$task_branch" "" >>"$output_file" 2>&1 || exit_code=126; fi
+      fi
+    fi
     if [[ "$exit_code" -eq 0 ]]; then gh pr create --base "$BASE_BRANCH" --head "$task_branch" --title "Codex: #$number $title" --body "Automated V3.2 execution. Report: EXECUTIONS/$task_id/$run_id.md" >>"$output_file" 2>&1 || true; fi
+    if [[ "$exit_code" -ne 0 ]]; then
+      gh issue comment "$number" --body-file <(printf '%s\\n\\nExit code: %s\\n\\n%s' "## Git verification failed" "$exit_code" "$(tail -c 12000 "$output_file")") >/dev/null
+      gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
+      cd "$ROOT"
+      git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
+      return 0
+    fi
     local result
     result="$(tail -c 12000 "$output_file")"
     gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result" "$result") >/dev/null
