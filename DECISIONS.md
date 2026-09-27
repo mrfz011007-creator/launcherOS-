@@ -1,4 +1,4 @@
-[object Object]
+# LauncherOS Decisions
 
 ## D-006 — Decision hierarchy
 
