@@ -279,6 +279,76 @@ release_task_claim() {
   rm -f "$claim_file"
 }
 
+write_execution_report() {
+  local report_dir="$ROOT/EXECUTIONS/$1"
+  local report_file="$report_dir/$2.md"
+  local final_state="$3"
+  local changed_files="$4"
+  local tests="$5"
+  local acceptance="$6"
+  local failures="$7"
+  local blockers="$8"
+  local decision_required="$9"
+  local next_position="${10}"
+  local runner_notes="${11}"
+  local director_review="${12}"
+  local finished_at
+  finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  mkdir -p "$report_dir"
+  {
+    echo "# Execution Report"
+    echo
+    echo "RUN_ID: $2"
+    echo "TASK_ID: $1"
+    echo "STARTED_AT: $started_at"
+    echo "FINISHED_AT: $finished_at"
+    echo "RUNNER: Codex via tools/codex-bridge.sh"
+    echo "INITIAL_STATE: TODO"
+    echo "FINAL_STATE: $final_state"
+    echo
+    echo "## CHANGED_FILES"
+    printf "%s\n" "$changed_files"
+    echo
+    echo "## CREATED_FILES"
+    echo "See CHANGED_FILES and Git diff."
+    echo
+    echo "## DELETED_FILES"
+    echo "See Git diff."
+    echo
+    echo "## TESTS"
+    printf "%s\n" "$tests"
+    echo
+    echo "## ACCEPTANCE"
+    printf "%s\n" "$acceptance"
+    echo
+    echo "## FAILURES"
+    printf "%s\n" "$failures"
+    echo
+    echo "## GIT"
+    echo "- BASE_BRANCH: $BASE_BRANCH"
+    echo "- TASK_BRANCH: ${task_branch:-unknown}"
+    echo "- CHECKPOINT_VERIFIED: $([[ "$final_state" == "VERIFIED" || "$final_state" == "TARGET_COMPLETE" ]] && echo true || echo false)"
+    echo
+    echo "## RESOURCE_USAGE"
+    grep "^RESOURCE_USAGE:" "$output_file" 2>/dev/null || true
+    echo
+    echo "## BLOCKERS"
+    printf "%s\n" "$blockers"
+    echo
+    echo "## DECISION_REQUIRED"
+    printf "%s\n" "$decision_required"
+    echo
+    echo "## NEXT_POSITION"
+    printf "%s\n" "$next_position"
+    echo
+    echo "## RUNNER_NOTES"
+    printf "%s\n" "$runner_notes"
+    echo
+    echo "## DIRECTOR_REVIEW"
+    printf "%s\n" "$director_review"
+  } >"$report_file"
+  printf "%s\n" "$report_file"
+}
 run_task() {
   local number="$1"
   local title="$2"
@@ -324,6 +394,8 @@ run_task() {
     return 0
   fi
   trap "release_task_claim \"$claim_file\"" RETURN
+  local started_at
+  started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "RUN_ID: $run_id"
   echo "TASK_ID: $task_id"
   echo "CLAIM: $claim_file"
@@ -443,7 +515,7 @@ EOF
   # Compare the task branch against the fetched base, not Codex's self-report.
   local scope_status="PASS"
   local changed_files
-  changed_files="$(git diff --name-only "origin/$BASE_BRANCH"...HEAD || true)"
+  changed_files="$({ git diff --name-only "origin/$BASE_BRANCH"...HEAD; git diff --name-only; git diff --cached --name-only; } | sort -u)"
 
   local allowed_scope do_not_touch
   allowed_scope="$(awk '
@@ -508,20 +580,19 @@ EOF
 
   if [[ "$exit_code" -eq 0 && "$budget_status" == "PASS" ]]; then
     git status --short >"${output_file}.gitstatus" || true
-    if git diff --quiet && git diff --cached --quiet; then
-      echo "No repository changes produced." >>"$output_file"
-    else
-      if ! git diff --quiet; then git add -A; fi
-      if ! git diff --cached --quiet; then git commit -m "codex: complete issue #$number" >>"$output_file" 2>&1 || true; fi
-    fi
-    git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?
-    if [[ "$exit_code" -eq 0 ]]; then
-      gh pr create --base "$BASE_BRANCH" --head "$task_branch" --title "Codex: #$number $title" --body "Automated V3.1 execution for issue #$number. See issue for execution evidence." >>"$output_file" 2>&1 || true
-    fi
+    if ! git diff --quiet; then git add -A; fi
+    if ! git diff --cached --quiet; then git commit -m "codex: complete issue #$number" >>"$output_file" 2>&1 || exit_code=$?; fi
+    local changed_after_commit
+    changed_after_commit="$(git diff --name-only "origin/$BASE_BRANCH"...HEAD || true)"
+    local report_file
+    report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Technical verification and scope verification passed. Product acceptance remains separate." "None" "None" "None" "TARGET_COMPLETE" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
+    git add "$report_file"
+    git commit -m "chore: record execution $run_id" >>"$output_file" 2>&1 || exit_code=$?
+    if [[ "$exit_code" -eq 0 ]]; then git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?; fi
+    if [[ "$exit_code" -eq 0 ]]; then gh pr create --base "$BASE_BRANCH" --head "$task_branch" --title "Codex: #$number $title" --body "Automated V3.2 execution. Report: EXECUTIONS/$task_id/$run_id.md" >>"$output_file" 2>&1 || true; fi
     local result
     result="$(tail -c 12000 "$output_file")"
-    gh issue comment "$number" --body-file <(printf '%s\n\n%s' \
-      "## Codex result" "$result") >/dev/null
+    gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result" "$result") >/dev/null
     gh issue edit "$number" --add-label "$DONE_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
     gh issue close "$number" >/dev/null
     echo "[$(date -Is)] Issue #$number completed."
