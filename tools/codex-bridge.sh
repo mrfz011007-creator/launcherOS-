@@ -279,6 +279,32 @@ release_task_claim() {
   rm -f "$claim_file"
 }
 
+write_evidence_record() {
+  local task_id="$1"
+  local run_id="$2"
+  local evidence_type="$3"
+  local status="$4"
+  local source="$5"
+  local details="$6"
+  local dir="$ROOT/EVIDENCE/$task_id/$run_id"
+  local file="$dir/$evidence_type.md"
+  mkdir -p "$dir"
+  {
+    echo "# Evidence: $evidence_type"
+    echo
+    echo "RUN_ID: $run_id"
+    echo "TASK_ID: $task_id"
+    echo "TYPE: $evidence_type"
+    echo "STATUS: $status"
+    echo "SOURCE: $source"
+    echo "RECORDED_AT: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo
+    echo "## DETAILS"
+    printf '%s\n' "$details"
+  } >"$file"
+  printf '%s\n' "$file"
+}
+
 write_execution_report() {
   local report_dir="$ROOT/EXECUTIONS/$1"
   local report_file="$report_dir/$2.md"
@@ -584,8 +610,14 @@ EOF
     if ! git diff --cached --quiet; then git commit -m "codex: complete issue #$number" >>"$output_file" 2>&1 || exit_code=$?; fi
     local changed_after_commit
     changed_after_commit="$(git diff --name-only "origin/$BASE_BRANCH"...HEAD || true)"
+    local implementation_evidence technical_evidence acceptance_evidence
+    implementation_evidence="$(write_evidence_record "$task_id" "$run_id" "implementation" "PASS" "git diff" "Codex execution completed and scope verification passed. Changed files are recorded in the execution report.")"
+    technical_evidence="$(write_evidence_record "$task_id" "$run_id" "technical-test" "PASS" "bridge execution" "Codex exited successfully and the bounded bridge checks passed. This record does not claim device/runtime acceptance.")"
+    acceptance_evidence="$(write_evidence_record "$task_id" "$run_id" "product-acceptance" "PENDING" "Project Owner" "No automatic product acceptance is asserted. Acceptance remains a separate human/product verification gate.")"
+    echo "EVIDENCE: implementation=$implementation_evidence technical=$technical_evidence acceptance=$acceptance_evidence" >>"$output_file"
+
     local report_file
-    report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Technical verification and scope verification passed. Product acceptance remains separate." "None" "None" "None" "TARGET_COMPLETE" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
+    report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Implementation evidence and technical-test evidence recorded. Product acceptance evidence is PENDING." "None" "None" "None" "TARGET_COMPLETE" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
     git add "$report_file"
     git commit -m "chore: record execution $run_id" >>"$output_file" 2>&1 || exit_code=$?
     if [[ "$exit_code" -eq 0 ]]; then git push -u origin "$task_branch" >>"$output_file" 2>&1 || exit_code=$?; fi
