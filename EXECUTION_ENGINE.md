@@ -19,6 +19,8 @@ VERIFYING
   ↓
 CHECKPOINT
   ↓
+VERIFIED
+  ↓
 DONE
 ```
 
