@@ -410,10 +410,14 @@ EOF
     attempt=$((attempt + 1))
     : >"$output_file"
 
+    local -a budget_codex_args
+    budget_codex_args=(exec --json --sandbox "$SANDBOX")
+    if [[ -n "$MODEL" ]]; then budget_codex_args+=(--model "$MODEL"); fi
+    budget_codex_args+=("$(cat "$prompt_file")")
+
+    exit_code=0
     timeout --signal=TERM --kill-after=30s "$effective_timeout_seconds" \
-      codex exec --json --sandbox "$SANDBOX" ${MODEL:+--model "$MODEL"} \
-      "$(cat "$prompt_file")" >"$output_file" 2>&1
-    exit_code=$?
+      codex "${budget_codex_args[@]}" >"$output_file" 2>&1 || exit_code=$?
 
     if [[ "$exit_code" -eq 0 ]]; then
       break
@@ -425,7 +429,7 @@ EOF
   done
 
   local observed_tool_calls
-  observed_tool_calls="$(jq -s '[.[] | select(.type == "item.started" or .type == "item.completed") | .item? | select(.type == "command_execution" or .type == "function_call")] | length' "$output_file" 2>/dev/null || printf '0')"
+  observed_tool_calls="$(jq -s '[.[] | select(.type == "item.completed") | .item? | select(.type == "command_execution" or .type == "function_call")] | length' "$output_file" 2>/dev/null || printf '0')"
 
   local budget_status="PASS"
   if [[ "$observed_tool_calls" -gt "$task_max_tool_calls" ]]; then
