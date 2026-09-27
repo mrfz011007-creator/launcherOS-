@@ -542,7 +542,7 @@ run_task() {
   task_max_runtime_minutes="$(budget_value "$task_file" max_runtime_minutes)"
 
   local run_id
-  run_id="run-$(date -u +%Y%m%dT%H%M%SZ)-$-$RANDOM"
+  run_id="run-$(date -u +%Y%m%dT%H%M%SZ)-${BASHPID}-${RANDOM}"
   local claim_file
   if ! claim_file="$(claim_task "$task_id" "$run_id")"; then
     stop_issue "$number" "CONFLICT" "Task $task_id is already claimed by another active bridge worker."
