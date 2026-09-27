@@ -26,6 +26,7 @@ TASKS_ROOT="${CODEX_TASKS_ROOT:-TASKS}"
 TASK_LABEL="codex-task"
 RUNNING_LABEL="codex-running"
 DONE_LABEL="codex-done"
+VERIFIED_LABEL="codex-verified"
 FAILED_LABEL="codex-failed"
 
 require_cmd() {
@@ -277,6 +278,27 @@ release_task_claim() {
   local claim_file="$1"
   [[ -f "$claim_file" ]] || return 0
   rm -f "$claim_file"
+}
+
+ensure_label "$VERIFIED_LABEL" "Execution verified; awaiting product acceptance"
+
+transition_state() {
+  local current="$1"
+  local next="$2"
+  case "$current:$next" in
+    TODO:IMPLEMENTING|IMPLEMENTING:TESTING|TESTING:VERIFYING|VERIFYING:VERIFIED|IMPLEMENTING:FAILED|TESTING:FAILED|VERIFYING:FAILED|TESTING:BUDGET_EXHAUSTED|IMPLEMENTING:BLOCKED|TESTING:BLOCKED|VERIFYING:DECISION_REQUIRED)
+      echo "STATE_TRANSITION: $current -> $next"
+      return 0
+      ;;
+    "$next:$next")
+      echo "STATE_TRANSITION: $current -> $next"
+      return 0
+      ;;
+    *)
+      echo "STATE_TRANSITION_INVALID: $current -> $next"
+      return 1
+      ;;
+  esac
 }
 
 verify_git_checkpoint() {
@@ -636,7 +658,7 @@ EOF
     echo "EVIDENCE: implementation=$implementation_evidence technical=$technical_evidence acceptance=$acceptance_evidence" >>"$output_file"
 
     local report_file
-    report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Implementation evidence and technical-test evidence recorded. Product acceptance evidence is PENDING." "None" "None" "None" "TARGET_COMPLETE" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
+    report_file="$(write_execution_report "$task_id" "$run_id" "VERIFIED" "$changed_after_commit" "Codex exit=$exit_code; scope verification PASS; budget status=$budget_status." "Implementation evidence and technical-test evidence recorded. Product acceptance evidence is PENDING." "None" "None" "None" "DIRECTOR_REVIEW" "$(tail -c 4000 "$output_file")" "Pending Director/human review.")"
     git add "$report_file"
     git commit -m "chore: record execution $run_id" >>"$output_file" 2>&1 || exit_code=$?
     local checkpoint_sha=""
@@ -664,12 +686,31 @@ EOF
       git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
       return 0
     fi
+    if ! transition_state "VERIFYING" "VERIFIED" >>"$output_file" 2>&1; then
+      gh issue comment "$number" --body "## State transition failed\n\nThe execution passed technical checks but the state transition to VERIFIED was rejected. Human review is required." >/dev/null || true
+      gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null || true
+      cd "$ROOT"
+      git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
+      return 0
+    fi
+    local state_evidence
+    state_evidence="$(write_evidence_record "$task_id" "$run_id" "state-transition" "PASS" "state transition engine" "VERIFIED reached only after scope, budget, evidence, and Git checkpoint checks passed. Product acceptance remains pending.")"
+    git add "$state_evidence"
+    git commit -m "chore: record state transition $run_id" >>"$output_file" 2>&1 || exit_code=$?
+    if [[ "$exit_code" -eq 0 ]]; then git push >>"$output_file" 2>&1 || exit_code=$?; fi
+    if [[ "$exit_code" -ne 0 ]]; then
+      gh issue comment "$number" --body "## State transition evidence failed\n\nThe execution could not persist the VERIFIED transition evidence." >/dev/null || true
+      gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null || true
+      cd "$ROOT"
+      git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
+      return 0
+    fi
     local result
     result="$(tail -c 12000 "$output_file")"
-    gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result" "$result") >/dev/null
-    gh issue edit "$number" --add-label "$DONE_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
-    gh issue close "$number" >/dev/null
-    echo "[$(date -Is)] Issue #$number completed."
+    gh issue comment "$number" --body-file <(printf "%s\n\n%s" "## Codex result — VERIFIED" "$result") >/dev/null
+    gh issue edit "$number" --add-label "$VERIFIED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
+    # VERIFIED is not DONE: product acceptance remains a separate human gate.
+    echo "[$(date -Is)] Issue #$number reached VERIFIED; awaiting product acceptance."
   else
     if [[ "$exit_code" -eq 0 && "$budget_status" == "BUDGET_EXHAUSTED" ]]; then
       exit_code=125
