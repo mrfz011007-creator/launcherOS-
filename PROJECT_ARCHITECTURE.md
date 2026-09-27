@@ -1,4 +1,4 @@
-# LauncherOS Project Architecture
+# LauncherOS Project Architecture — V3.2
 
 ## Product
 
@@ -6,7 +6,7 @@ Android launcher for TECNO SPARK Go 2024 / BG6, Android 13, 4 GB physical RAM.
 
 ## Runtime architecture
 
-- Android application built with Kotlin/Compose.
+- Kotlin + Jetpack Compose.
 - Launcher entry point requests HOME role where supported.
 - App discovery uses Android PackageManager.
 - Wallpaper is the primary visual layer.
@@ -17,8 +17,36 @@ Android launcher for TECNO SPARK Go 2024 / BG6, Android 13, 4 GB physical RAM.
 
 ## Execution architecture
 
-Human -> ChatGPT Director -> Codex Runner -> Codespaces workspace -> GitHub source of truth -> evidence -> Director.
+Project Owner
+-> ChatGPT Director
+-> GitHub source of truth
+-> bounded task
+-> Codex Runner
+-> Codespace
+-> build/test
+-> evidence
+-> Director verification
+-> Project Owner acceptance when required
 
-The execution bridge is intentionally simple: GitHub Issues act as the task transport. A Codespace-local bridge polls codex-task issues and invokes Codex non-interactively.
+GitHub remains the source of truth. Codespace is a temporary worker.
 
-Do not add agents, queues, databases, webhook infrastructure, or other orchestration components unless a measurable requirement emerges.
+## Control plane
+
+- AI_MEMORY.md: stable operational memory.
+- AI_PROTOCOL.md: operating rules.
+- PROJECT_STATE.md: current project snapshot.
+- PROJECT_ARCHITECTURE.md: technical map.
+- DECISIONS.md: explicit decisions.
+- EXECUTION_MAP.md: milestone/dependency map.
+- TASK_SCHEMA.md: task contract.
+- TASKS/: executable task definitions.
+- EXECUTION_SCHEMA.md: execution report contract.
+- EXECUTIONS/: bounded run records.
+- EVIDENCE/: durable verification references.
+- DECISION_GATE.md: authority and stop rules.
+- EXECUTION_ENGINE.md: execution lifecycle specification.
+- tools/codex-bridge.sh: initial execution adapter.
+
+## Infrastructure constraint
+
+Do not add agents, queues, databases, webhook infrastructure, or dashboards unless a measurable requirement emerges and the Project Owner approves the scope.
