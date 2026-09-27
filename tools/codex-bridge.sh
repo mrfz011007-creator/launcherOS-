@@ -310,6 +310,12 @@ run_task() {
 
   task_contract="$(cat "$task_file")"
 
+  local task_max_steps task_max_tool_calls task_max_retries task_max_runtime_minutes
+  task_max_steps="$(budget_value "$task_file" max_steps)"
+  task_max_tool_calls="$(budget_value "$task_file" max_tool_calls)"
+  task_max_retries="$(budget_value "$task_file" max_retries)"
+  task_max_runtime_minutes="$(budget_value "$task_file" max_runtime_minutes)"
+
   local run_id
   run_id="run-$(date -u +%Y%m%dT%H%M%SZ)-$-$RANDOM"
   local claim_file
@@ -377,13 +383,59 @@ EOF
   fi
   codex_args+=("$(cat "$prompt_file")")
 
-  echo "[$(date -Is)] Starting Codex for issue #$number"
-  local exit_code=0
-  local attempt=1
-  timeout --signal=TERM --kill-after=30s "$MAX_TASK_SECONDS" \
-    codex "${codex_args[@]}" >"$output_file" 2>&1 || exit_code=$?
+  local effective_timeout_seconds="$MAX_TASK_SECONDS"
+  local task_timeout_seconds=$((task_max_runtime_minutes * 60))
+  if [[ "$task_timeout_seconds" -lt "$effective_timeout_seconds" ]]; then
+    effective_timeout_seconds="$task_timeout_seconds"
+  fi
 
-  if [[ "$exit_code" -eq 0 ]]; then
+  local max_attempts="$task_max_retries"
+  if [[ "$MAX_RETRIES" -lt "$max_attempts" ]]; then
+    max_attempts="$MAX_RETRIES"
+  fi
+  if [[ "$task_max_steps" -lt 1 ]]; then
+    stop_issue "$number" "BUDGET_EXHAUSTED" "Task max_steps must be at least 1."
+    return 0
+  fi
+  if [[ "$max_attempts" -gt "$((task_max_steps - 1))" ]]; then
+    max_attempts="$((task_max_steps - 1))"
+  fi
+
+  echo "[$(date -Is)] Starting Codex for issue #$number"
+  echo "Budget: steps=$task_max_steps tool_calls=$task_max_tool_calls retries=$max_attempts runtime=${effective_timeout_seconds}s"
+
+  local exit_code=124
+  local attempt=0
+  while (( attempt <= max_attempts )); do
+    attempt=$((attempt + 1))
+    : >"$output_file"
+
+    timeout --signal=TERM --kill-after=30s "$effective_timeout_seconds" \
+      codex exec --json --sandbox "$SANDBOX" ${MODEL:+--model "$MODEL"} \
+      "$(cat "$prompt_file")" >"$output_file" 2>&1
+    exit_code=$?
+
+    if [[ "$exit_code" -eq 0 ]]; then
+      break
+    fi
+    if (( attempt <= max_attempts )); then
+      echo "[$(date -Is)] Deterministic runner retry $attempt/$max_attempts"
+      sleep 1
+    fi
+  done
+
+  local observed_tool_calls
+  observed_tool_calls="$(jq -s '[.[] | select(.type == "item.started" or .type == "item.completed") | .item? | select(.type == "command_execution" or .type == "function_call")] | length' "$output_file" 2>/dev/null || printf '0')"
+
+  local budget_status="PASS"
+  if [[ "$observed_tool_calls" -gt "$task_max_tool_calls" ]]; then
+    budget_status="BUDGET_EXHAUSTED"
+  fi
+  if [[ "$exit_code" -eq 124 ]]; then
+    budget_status="BUDGET_EXHAUSTED"
+  fi
+  echo "RESOURCE_USAGE: attempts=$attempt max_attempts=$max_attempts observed_tool_calls=$observed_tool_calls max_tool_calls=$task_max_tool_calls runtime_limit_seconds=$effective_timeout_seconds budget_status=$budget_status" >>"$output_file"
+  if [[ "$exit_code" -eq 0 && "$budget_status" == "PASS" ]]; then
     git status --short >"${output_file}.gitstatus" || true
     if git diff --quiet && git diff --cached --quiet; then
       echo "No repository changes produced." >>"$output_file"
@@ -403,8 +455,11 @@ EOF
     gh issue close "$number" >/dev/null
     echo "[$(date -Is)] Issue #$number completed."
   else
+    if [[ "$exit_code" -eq 0 && "$budget_status" == "BUDGET_EXHAUSTED" ]]; then
+      exit_code=125
+    fi
     local result
-    result="$(tail -c 12000 "$output_file")"
+    result="$(tail -c 12000 "$output_file")
     gh issue comment "$number" --body-file <(printf '%s\n\nExit code: %s\n\n%s' \
       "## Codex failed or timed out" "$exit_code" "$result") >/dev/null
     gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
