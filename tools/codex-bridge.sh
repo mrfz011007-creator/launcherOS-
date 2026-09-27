@@ -22,6 +22,7 @@ MODEL="${CODEX_MODEL:-}"
 MAX_TASK_SECONDS="${CODEX_MAX_TASK_SECONDS:-1800}"
 MAX_RETRIES="${CODEX_MAX_RETRIES:-1}"
 BASE_BRANCH="${CODEX_BASE_BRANCH:-main}"
+TASKS_ROOT="${CODEX_TASKS_ROOT:-TASKS}"
 TASK_LABEL="codex-task"
 RUNNING_LABEL="codex-running"
 DONE_LABEL="codex-done"
@@ -38,6 +39,11 @@ require_cmd gh
 require_cmd codex
 require_cmd git
 require_cmd timeout
+require_cmd jq
+require_cmd awk
+require_cmd grep
+require_cmd sed
+require_cmd find
 
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 
@@ -52,47 +58,266 @@ ensure_label "$RUNNING_LABEL" "Currently being processed by Codex"
 ensure_label "$DONE_LABEL" "Completed by Codex"
 ensure_label "$FAILED_LABEL" "Codex could not complete the task"
 
-echo "LauncherOS Codex bridge"
+echo "LauncherOS Codex bridge V3.2"
 echo "Repository : $REPO"
 echo "Sandbox    : $SANDBOX"
 echo "Polling    : ${POLL_SECONDS}s"
+echo "Task root  : $TASKS_ROOT"
 echo "Waiting for issues labelled '$TASK_LABEL'..."
+
+
+frontmatter_value() {
+  local file="$1"
+  local key="$2"
+  awk -v key="$key" '
+    BEGIN { started=0 }
+    /^---[[:space:]]*$/ {
+      if (started == 0) { started=1; next }
+      exit
+    }
+    started == 1 && $0 ~ ("^" key ":[[:space:]]*") {
+      sub("^" key ":[[:space:]]*", "", $0)
+      print $0
+      exit
+    }
+  ' "$file"
+}
+
+frontmatter_has_key() {
+  local file="$1"
+  local key="$2"
+  awk -v key="$key" '
+    BEGIN { started=0; found=0 }
+    /^---[[:space:]]*$/ {
+      if (started == 0) { started=1; next }
+      exit
+    }
+    started == 1 && $0 ~ ("^" key ":[[:space:]]*") {
+      found=1
+      exit
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file"
+}
+
+budget_value() {
+  local file="$1"
+  local key="$2"
+  awk -v key="$key" '
+    BEGIN { started=0; in_budget=0 }
+    /^---[[:space:]]*$/ {
+      if (started == 0) { started=1; next }
+      exit
+    }
+    started == 1 {
+      if ($0 ~ /^BUDGET:[[:space:]]*$/) { in_budget=1; next }
+      if (in_budget && $0 ~ /^[A-Z][A-Z0-9_]*:/) { exit }
+      if (in_budget && $0 ~ ("^[[:space:]]+" key ":[[:space:]]*[0-9]+[[:space:]]*$")) {
+        line=$0
+        sub("^[[:space:]]*" key ":[[:space:]]*", "", line)
+        print line
+        exit
+      }
+    }
+  ' "$file"
+}
+
+find_task_file() {
+  local task_id="$1"
+  local count=0
+  local match=""
+  while IFS= read -r candidate; do
+    count=$((count + 1))
+    match="$candidate"
+  done < <(find "$TASKS_ROOT" -type f -name "$task_id-*.md" -print)
+
+  if [[ "$count" -eq 0 ]]; then
+    echo "No task contract found for TASK_ID=$task_id" >&2
+    return 1
+  fi
+  if [[ "$count" -gt 1 ]]; then
+    echo "Multiple task contracts found for TASK_ID=$task_id" >&2
+    return 1
+  fi
+  printf '%s\n' "$match"
+}
+
+validate_task_contract() {
+  local file="$1"
+  [[ -s "$file" ]] || { echo "Task contract is empty: $file" >&2; return 1; }
+  [[ "$(head -n 1 "$file")" == "---" ]] || { echo "Task contract needs YAML front matter: $file" >&2; return 1; }
+
+  local markers
+  markers="$(awk '/^---[[:space:]]*$/{count++} END{print count+0}' "$file")"
+  [[ "$markers" -ge 2 ]] || { echo "Task contract is missing closing front matter: $file" >&2; return 1; }
+
+  local key
+  local required="TASK_ID TITLE OBJECTIVE RISK CURRENT_STATE ALLOWED_SCOPE DO_NOT_TOUCH DEPENDENCIES RELEVANT_CONTEXT ACCEPTANCE_CRITERIA TEST_REQUIREMENT BUDGET STOP_CONDITIONS EXPECTED_OUTPUT"
+  for key in $required; do
+    frontmatter_has_key "$file" "$key" || { echo "Missing task field: $key" >&2; return 1; }
+  done
+
+  local task_id state risk
+  task_id="$(frontmatter_value "$file" TASK_ID)"
+  state="$(frontmatter_value "$file" CURRENT_STATE)"
+  risk="$(frontmatter_value "$file" RISK)"
+
+  [[ "$task_id" =~ ^M[0-9]{2}-[0-9]{3}$ ]] || { echo "Invalid TASK_ID: $task_id" >&2; return 1; }
+
+  case "$state" in
+    TODO|FAILED) ;;
+    *) echo "Task state is not executable: $state" >&2; return 1 ;;
+  esac
+
+  case "$risk" in
+    A|B) ;;
+    C) echo "Risk C requires an explicit Decision Gate." >&2; return 2 ;;
+    *) echo "Invalid task risk: $risk" >&2; return 1 ;;
+  esac
+
+  local value
+  for key in max_steps max_tool_calls max_retries max_runtime_minutes; do
+    value="$(budget_value "$file" "$key")"
+    [[ "$value" =~ ^[0-9]+$ ]] || { echo "Invalid or missing budget: $key" >&2; return 1; }
+  done
+
+  if [[ "$(budget_value "$file" max_steps)" -le 0 ||
+        "$(budget_value "$file" max_tool_calls)" -le 0 ||
+        "$(budget_value "$file" max_runtime_minutes)" -le 0 ]]; then
+    echo "Budget limits must be greater than zero." >&2
+    return 1
+  fi
+}
+
+check_task_dependencies() {
+  local file="$1"
+  local dep dep_file dep_state
+  while IFS= read -r dep; do
+    [[ -z "$dep" ]] && continue
+    if [[ "$dep" =~ ^M[0-9]{2}-[0-9]{3}$ ]]; then
+      dep_file="$(find_task_file "$dep")" || return 1
+      dep_state="$(frontmatter_value "$dep_file" CURRENT_STATE)"
+      case "$dep_state" in
+        VERIFIED|DONE) ;;
+        *) echo "Dependency $dep is not complete: $dep_state" >&2; return 1 ;;
+      esac
+    elif [[ "$dep" == *.md || "$dep" == */* ]]; then
+      [[ -e "$dep" ]] || { echo "Dependency path does not exist: $dep" >&2; return 1; }
+    fi
+  done < <(awk -v key="DEPENDENCIES" '
+    BEGIN { started=0; in_key=0 }
+    /^---[[:space:]]*$/ {
+      if (started == 0) { started=1; next }
+      exit
+    }
+    started == 1 {
+      if ($0 ~ ("^" key ":[[:space:]]*$")) { in_key=1; next }
+      if (in_key && $0 ~ /^[A-Z][A-Z0-9_]*:/) { exit }
+      if (in_key && $0 ~ /^[[:space:]]*-[[:space:]]+/) {
+        sub(/^[[:space:]]*-[[:space:]]+/, "", $0)
+        print $0
+      }
+    }
+  ' "$file")
+}
+
+precheck_task() {
+  local file="$1"
+  echo "== PRECHECK =="
+  echo "Task file: $file"
+
+  [[ -z "$(git status --porcelain)" ]] || { echo "Working tree is not clean." >&2; return 3; }
+  validate_task_contract "$file" || return $?
+  check_task_dependencies "$file" || return 1
+
+  [[ -f "$ROOT/PROJECT_STATE.md" ]] || { echo "PROJECT_STATE.md is missing." >&2; return 1; }
+  if grep -Eq '^[[:space:]]*-[[:space:]]*(DECISION_REQUIRED|CONFLICT|SECURITY)(:|[[:space:]]|$)' "$ROOT/PROJECT_STATE.md"; then
+    echo "PROJECT_STATE contains an active blocking gate." >&2
+    return 2
+  fi
+
+  echo "Repository: PASS"
+  echo "Task contract: PASS"
+  echo "Dependencies: PASS"
+  echo "Decision/conflict/security gate: PASS"
+  echo "Working tree: PASS"
+  echo "Budget schema: PASS"
+  echo "Precheck: PASS"
+}
+
+stop_issue() {
+  local number="$1"
+  local reason="$2"
+  local details="$3"
+  gh issue comment "$number" --body "## V3.2 STOP\n\n**Reason:** $reason\n\n$details" >/dev/null || true
+  gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$TASK_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null || true
+}
 
 run_task() {
   local number="$1"
   local title="$2"
   local body="$3"
+  local task_id task_file task_contract
   local prompt_file output_file
 
+  task_id="$(printf '%s\n%s\n' "$body" "$title" | sed -n 's/^[[:space:]]*TASK_ID:[[:space:]]*//p' | head -n 1 | tr -d '\r')"
+  if [[ -z "$task_id" ]]; then
+    task_id="$(printf '%s\n' "$title" | grep -oE 'M[0-9]{2}-[0-9]{3}' | head -n 1 || true)"
+  fi
+
+  [[ -n "$task_id" ]] || { stop_issue "$number" "PRECHECK_FAILED" "Issue #$number does not identify a TASK_ID."; return 0; }
+
+  if ! task_file="$(find_task_file "$task_id")"; then
+    stop_issue "$number" "PRECHECK_FAILED" "TASK_ID=$task_id has no unique task contract under $TASKS_ROOT/."
+    return 0
+  fi
+
+  local precheck_code=0
+  precheck_task "$task_file" || precheck_code=$?
+
+  case "$precheck_code" in
+    0) ;;
+    2) stop_issue "$number" "DECISION_REQUIRED" "Task $task_id requires a Decision Gate or an active blocking gate."; return 0 ;;
+    3) stop_issue "$number" "BLOCKED" "Working tree must be clean before execution."; return 0 ;;
+    *) stop_issue "$number" "PRECHECK_FAILED" "Task contract or dependency validation failed."; return 0 ;;
+  esac
+
+  task_contract="$(cat "$task_file")"
   prompt_file="$(mktemp)"
   output_file="$(mktemp)"
   trap 'rm -f "$prompt_file" "$output_file"' RETURN
 
   cat >"$prompt_file" <<EOF
-You are the implementation agent for LauncherOS operating under V3.1 Bounded Autonomous Execution.
+You are the implementation agent for LauncherOS operating under Bridge V3.2.
+
+The GitHub Issue is only the execution trigger.
+The Task Contract below is authoritative.
 
 Before acting, read PROJECT_STATE.md, the relevant EXECUTION_MAP.md section, AI_PROTOCOL.md, and only the source files needed for the task.
 
 Repository: $REPO
 GitHub issue: #$number
 Issue title: $title
+TASK_ID: $task_id
 
-TASK:
-$body
+TASK CONTRACT:
+$task_contract
 
 AUTOMATION RULES:
 1. Work directly in the current repository.
 2. Inspect the existing implementation before editing.
 3. Follow AGENTS.md and the LauncherOS reference-fidelity rules.
-4. Make the smallest coherent implementation that solves the task.
+4. Make the smallest coherent implementation that solves the Task Contract.
 5. Run relevant tests/build checks before finishing.
-6. Do not merely describe code changes: actually implement them.
-7. Do not modify secrets, authentication files, or unrelated projects.
-8. If blocked, explain the exact blocker instead of inventing a result.
-9. Do not make strategic architecture/scope changes; stop with DECISION_REQUIRED if they are necessary.
-10. Update PROJECT_STATE.md before stopping with current position, evidence, blockers, and next position.
-11. If verified, commit the changes on the task branch with a clear message. Do not push secrets.
-12. Your final response must contain:
+6. Do not treat the GitHub Issue body as authority when it conflicts with the Task Contract.
+7. Do not merely describe code changes: actually implement them.
+8. Do not modify secrets, authentication files, release/signing configuration, or unrelated projects.
+9. Do not expand scope beyond ALLOWED_SCOPE or modify DO_NOT_TOUCH paths.
+10. Do not make strategic architecture/scope changes; stop with DECISION_REQUIRED if they are necessary.
+11. If blocked, explain the exact blocker instead of inventing a result.
+12. Update PROJECT_STATE.md only when the Task Contract permits it.
+13. If verified, commit the changes on the task branch with a clear message. Do not push secrets.
+14. Your final response must contain:
    - STATUS: DONE or BLOCKED
    - SUMMARY: concise changes
    - VERIFICATION: commands/tests and results
@@ -100,12 +325,6 @@ AUTOMATION RULES:
 EOF
 
   gh issue edit "$number" --add-label "$RUNNING_LABEL" --remove-label "$TASK_LABEL" >/dev/null
-
-  if [[ -n "$(git status --porcelain)" ]]; then
-    gh issue comment "$number" --body "## V3.1 BLOCKED\nWorking tree is not clean before execution. Human intervention is required to protect uncommitted work." >/dev/null
-    gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
-    return 1
-  fi
 
   git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
   local task_branch="codex/issue-$number"
@@ -168,7 +387,7 @@ while true; do
       number="$(jq -r '.number' <<<"$issue_json")"
       title="$(jq -r '.title' <<<"$issue_json")"
       body="$(jq -r '.body // ""' <<<"$issue_json")"
-      run_task "$number" "$title" "$body"
+      run_task "$number" "$title" "$body" || true
     done <<<"$tasks"
   fi
 
