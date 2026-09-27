@@ -100,7 +100,8 @@ Codex may not:
 - resolve conflicts by assumption;
 - invent requirements;
 - modify protected files without authorization;
-- release or sign builds autonomously.
+- release or sign builds autonomously;
+- declare human acceptance.
 
 ## Verification
 
