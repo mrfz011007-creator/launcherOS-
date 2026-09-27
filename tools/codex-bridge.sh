@@ -439,6 +439,73 @@ EOF
     budget_status="BUDGET_EXHAUSTED"
   fi
   echo "RESOURCE_USAGE: attempts=$attempt max_attempts=$max_attempts observed_tool_calls=$observed_tool_calls max_tool_calls=$task_max_tool_calls runtime_limit_seconds=$effective_timeout_seconds budget_status=$budget_status" >>"$output_file"
+  # Independent scope verification happens before any commit/push.
+  # Compare the task branch against the fetched base, not Codex's self-report.
+  local scope_status="PASS"
+  local changed_files
+  changed_files="$(git diff --name-only "origin/$BASE_BRANCH"...HEAD || true)"
+
+  local allowed_scope do_not_touch
+  allowed_scope="$(awk '
+    BEGIN { started=0; in_key=0 }
+    /^---[[:space:]]*$/ { if (started == 0) { started=1; next } exit }
+    started == 1 {
+      if ($0 ~ /^ALLOWED_SCOPE:[[:space:]]*$/) { in_key=1; next }
+      if (in_key && $0 ~ /^[A-Z][A-Z0-9_]*:/) { exit }
+      if (in_key && $0 ~ /^[[:space:]]*-[[:space:]]+/) { sub(/^[[:space:]]*-[[:space:]]+/, "", $0); print }
+    }
+  ' "$task_file")"
+  do_not_touch="$(awk '
+    BEGIN { started=0; in_key=0 }
+    /^---[[:space:]]*$/ { if (started == 0) { started=1; next } exit }
+    started == 1 {
+      if ($0 ~ /^DO_NOT_TOUCH:[[:space:]]*$/) { in_key=1; next }
+      if (in_key && $0 ~ /^[A-Z][A-Z0-9_]*:/) { exit }
+      if (in_key && $0 ~ /^[[:space:]]*-[[:space:]]+/) { sub(/^[[:space:]]*-[[:space:]]+/, "", $0); print }
+    }
+  ' "$task_file")"
+
+  path_allowed() {
+    local path="$1"
+    local prefix
+    while IFS= read -r prefix; do
+      [[ -z "$prefix" ]] && continue
+      prefix="${prefix#./}"
+      if [[ "$path" == "$prefix" || "$path" == "$prefix/"* ]]; then return 0; fi
+    done <<< "$allowed_scope"
+    return 1
+  }
+
+  path_forbidden() {
+    local path="$1"
+    local prefix
+    while IFS= read -r prefix; do
+      [[ -z "$prefix" ]] && continue
+      prefix="${prefix#./}"
+      if [[ "$path" == "$prefix" || "$path" == "$prefix/"* ]]; then return 0; fi
+    done <<< "$do_not_touch"
+    return 1
+  }
+
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    if ! path_allowed "$path" || path_forbidden "$path"; then
+      scope_status="OUT_OF_SCOPE"
+      echo "SCOPE_VIOLATION: $path" >>"$output_file"
+    fi
+  done <<< "$changed_files"
+
+  echo "SCOPE_VERIFICATION: status=$scope_status" >>"$output_file"
+  if [[ "$scope_status" != "PASS" ]]; then
+    stop_issue "$number" "OUT_OF_SCOPE" "Changed files violated ALLOWED_SCOPE or DO_NOT_TOUCH. Review the execution output for the exact paths."
+    local scope_result
+    scope_result="$(tail -c 12000 "$output_file")"
+    gh issue comment "$number" --body-file <(printf '%s\\n\\n%s' "## Scope verification failed" "$scope_result") >/dev/null || true
+    cd "$ROOT"
+    git switch "$BASE_BRANCH" >/dev/null 2>&1 || true
+    return 0
+  fi
+
   if [[ "$exit_code" -eq 0 && "$budget_status" == "PASS" ]]; then
     git status --short >"${output_file}.gitstatus" || true
     if git diff --quiet && git diff --cached --quiet; then
@@ -463,7 +530,7 @@ EOF
       exit_code=125
     fi
     local result
-    result="$(tail -c 12000 "$output_file")
+    result="$(tail -c 12000 "$output_file")"
     gh issue comment "$number" --body-file <(printf '%s\n\nExit code: %s\n\n%s' \
       "## Codex failed or timed out" "$exit_code" "$result") >/dev/null
     gh issue edit "$number" --add-label "$FAILED_LABEL" --remove-label "$RUNNING_LABEL" >/dev/null
